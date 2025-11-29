@@ -1,0 +1,164 @@
+name: Build Plant Identification APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [published]
+  workflow_dispatch: # 允许手动触发
+
+env:
+  PYTHON_VERSION: '3.11'
+  APP_NAME: '植物识别应用'
+  APP_PACKAGE_NAME: 'com.mayinchao.plantapp'
+
+jobs:
+  build-android-apk:
+    name: 构建植物识别 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    - name: 设置 Python 环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: 显示项目结构
+      run: |
+        echo "=== 项目结构 ==="
+        find . -name "*.py" | grep -E "(main|app)" | sort
+        echo ""
+        echo "=== Frontend 目录内容 ==="
+        ls -la Frontend/
+        echo ""
+        echo "=== backend 目录内容 ==="
+        ls -la backend/
+
+    - name: 安装 Python 依赖
+      run: |
+        python -m pip install --upgrade pip
+        
+        # 安装 Flet 和构建工具
+        pip install flet[build]
+        
+        # 安装项目依赖
+        if [ -f "Frontend/requirements.txt" ]; then
+          echo "安装 Frontend/requirements.txt 中的依赖"
+          pip install -r Frontend/requirements.txt
+        elif [ -f "backend/requirements.txt" ]; then
+          echo "安装 backend/requirements.txt 中的依赖"
+          pip install -r backend/requirements.txt
+        else
+          echo "安装默认依赖"
+          pip install flet Pillow requests torch torchvision
+        fi
+        
+        # 显示已安装的包
+        echo "=== 已安装的 Python 包 ==="
+        pip list | grep -E "(flet|PIL|torch|requests)"
+
+    - name: 测试导入 Frontend 模块
+      run: |
+        echo "=== 测试导入 Frontend 模块 ==="
+        python -c "
+import sys
+sys.path.append('Frontend')
+try:
+    from main import main
+    print('✅ 成功导入 Frontend.main')
+except Exception as e:
+    print(f'❌ 导入 Frontend.main 失败: {e}')
+    import traceback
+    traceback.print_exc()
+"
+
+    - name: 创建简化的入口点
+      run: |
+        cat > main.py << 'EOF'
+import sys
+import os
+import flet as ft
+
+# 添加 Frontend 目录到路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Frontend'))
+
+def main(page: ft.Page):
+    page.title = "${{ env.APP_NAME }}"
+    
+    try:
+        # 直接从 Frontend.main 导入
+        from Frontend.main import main as frontend_main
+        print("✅ 成功导入 Frontend.main")
+        return frontend_main(page)
+    except ImportError as e:
+        print(f"❌ 导入 Frontend.main 失败: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # 回退到简单应用
+        page.add(ft.Text("${{ env.APP_NAME }}"))
+        page.add(ft.Text("应用已启动"))
+        page.add(ft.Text("如果看到此消息，请检查 Frontend/main.py 的导入"))
+
+if __name__ == "__main__":
+    ft.app(target=main)
+EOF
+        
+        echo "=== 创建的 main.py 内容 ==="
+        cat main.py
+
+    - name: 构建 APK
+      run: |
+        echo "开始构建 APK..."
+        
+        # 显示 Flet 版本和帮助
+        flet --version
+        echo "=== Flet build apk 帮助 ==="
+        flet build apk --help || true
+        
+        # 执行构建
+        echo "=== 执行构建命令 ==="
+        flet build apk --verbose
+        
+        # 检查构建结果
+        echo "=== 检查 APK 文件 ==="
+        find . -name "*.apk" -type f 2>/dev/null || echo "未找到 APK 文件"
+        [ -d "build/apk" ] && echo "build/apk 目录内容:" && ls -la build/apk/
+
+    - name: 查找并上传 APK 文件
+      run: |
+        echo "=== 查找所有 APK 文件 ==="
+        find . -name "*.apk" -type f
+        
+        # 如果找到了 APK 文件，显示文件大小
+        for apk in $(find . -name "*.apk" -type f); do
+          echo "APK 文件: $apk ($(du -h $apk | cut -f1))"
+        done
+
+    - name: 上传 APK 构件
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.APP_NAME }}-apk
+        path: |
+          build/apk/*.apk
+          *.apk
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: 上传到 Release (仅限发布时)
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./build/apk/app-arm64-v8a-release.apk
+        asset_name: ${{ env.APP_NAME }}-${{ github.event.release.tag_name }}.apk
+        asset_content_type: application/vnd.android.package-archive
