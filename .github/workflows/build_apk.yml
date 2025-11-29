@@ -1,0 +1,53 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  release:
+    types: [published]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openjdk-11-jdk
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flet
+        # 安装项目依赖
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        
+    - name: Install Flet CLI and build tools
+      run: |
+        pip install flet-cli
+        flet --version
+        
+    - name: Build APK
+      run: |
+        # 尝试不同的构建命令
+        flet build apk -v
+        
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: plant-app-apk
+        path: |
+          build/apk/*.apk
+          *.apk
+        retention-days: 30
