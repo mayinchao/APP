@@ -1,0 +1,10 @@
+# 核心Flet框架
+flet>=0.24.0
+# Flet扩展组件（视频播放、定位功能必需）
+flet_video>=0.24.0
+flet_geolocator>=0.24.0
+# 网络请求
+aiohttp>=3.10.0
+requests>=2.30.0
+# 图片处理
+pillow>=10.0.0
