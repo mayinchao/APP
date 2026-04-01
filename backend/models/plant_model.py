@@ -1,116 +1,143 @@
 import torch
-import torch.nn as nn
-from torchvision import transforms
-from PIL import Image
-import json
+import torch.nn.functional as F
+import numpy as np
 import os
-from backend.models.bryoFormer import BryoFormer
+from PIL import Image
+from torchvision import transforms
+from .BryoFormer import BryoFormer
 
 
-class PlantRecognitionModel:
-    def __init__(self, model_path=None, num_classes=44, device=None):
+class UniversalPlantIdentifier:
+    def __init__(self, model_path, device=None):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.num_classes = num_classes
 
-        print("🚀 初始化植物识别模型...")
-        self.model = self.load_model(model_path)
-        self.class_names = self.load_class_names()
-        self.transform = self.get_transform()
-        print("✅ 模型初始化完成")
+        # 你的44个苔藓类别
+        self.class_names = [
+            'Barbulaunguiculata', 'Bartramia pomiformis', 'Bryum argenteum', 'Calohypnum plumiforme',
+            'Climacium dendroides', 'Conocephalum conicum', 'Dumortiera hirsuta', 'Ectropothecium ohosimense',
+            'Entodon challengeri', 'Entodon cladorrhizans', 'Entodon flavescens', 'Entodon luridus',
+            'Entodon macropodus', 'Eurohypnum leptothallum', 'Funaria hygrometrica', 'Haplocladium microphyllum',
+            'Hypnum cupressiforme', 'Leucobryum glaucum', 'Marchantia emarginata subsp. Tosana',
+            'Marchantia polymorpha', 'Myuroclada maximowiczii', 'Physcomitrium sphaericum',
+            'Plagiochasma rupestre', 'Plagiomnium acutum', 'Plagiomnium cuspidatum', 'Pogonatum inflexum',
+            'Polytrichum commune', 'Pseudotaxiphyllum pohliaecarpum', 'Reboulia hemisphaerica',
+            'Rhodobryum giganteum', 'Rhodobryum roseum', 'Riccia fluitans', 'Ricciocarpus natans',
+            'Sphagnum palustre', 'Taxiphyllum taxirameum', 'Thuidium assimile', 'Thuidium cymbifolium',
+            'Thuidium kanedae', 'Thuidium pristocalyx', 'Venturiella sinensis', 'abietinella_abietina',
+            'hylocomium_splendens', 'pleurozium_schreberi', 'pseudoscleropodium_purum'
+        ]
 
-    def load_model(self, model_path):
-        """加载 BryoFormer 模型"""
-        model = BryoFormer(
-            img_size=224,
-            patch_size=16,
-            in_chans=3,
-            num_classes=self.num_classes,
-            embed_dim=384,
-            depth=8,
-            mlp_ratio=2.
-        )
+        print(f"🌿 苔藓类别数量: {len(self.class_names)}")
 
-        # 检查模型文件是否存在
+        # 先尝试直接加载整个模型
+        self.model_loaded = False
+        self.model = None
+
         if model_path and os.path.exists(model_path):
-            print(f"📥 尝试加载模型: {model_path}")
             try:
-                # 方法1: 尝试直接加载
-                checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
+                print(f"📥 加载权重文件: {model_path}")
+                print(f"📏 文件大小: {os.path.getsize(model_path) / 1024 / 1024:.2f} MB")
 
-                # 检查checkpoint结构
-                print(f"🔍 Checkpoint keys: {list(checkpoint.keys())}")
+                # 方法1: 直接加载整个模型
+                print("🔄 尝试直接加载模型对象...")
+                loaded_obj = torch.load(model_path, map_location=self.device, weights_only=False)
+                print(f"📦 加载的对象类型: {type(loaded_obj)}")
+                print(f"📦 加载的对象: {loaded_obj}")
 
-                # 尝试不同的键名
-                if 'model_state_dict' in checkpoint:
-                    state_dict = checkpoint['model_state_dict']
-                elif 'state_dict' in checkpoint:
-                    state_dict = checkpoint['state_dict']
-                elif 'model' in checkpoint:
-                    state_dict = checkpoint['model']
+                if isinstance(loaded_obj, BryoFormer):
+                    print("✅ 成功加载 BryoFormer 模型实例")
+                    self.model = loaded_obj
+                    self.model_loaded = True
+                    print(f"🔢 加载模型的类别数: {self.model.num_classes}")
                 else:
-                    state_dict = checkpoint  # 直接是state_dict
+                    print("❌ 加载的对象不是 BryoFormer 类型")
+                    print("🔄 尝试作为 state_dict 加载...")
 
-                # 修复键名不匹配的问题
-                new_state_dict = {}
-                for k, v in state_dict.items():
-                    # 移除可能的模块前缀
-                    if k.startswith('module.'):
-                        new_k = k[7:]  # 移除 'module.'
-                    elif k.startswith('model.'):
-                        new_k = k[6:]  # 移除 'model.'
+                    # 方法2: 创建新模型并加载权重
+                    self.model = BryoFormer(
+                        img_size=224,
+                        patch_size=16,
+                        in_chans=3,
+                        num_classes=44,  # 重要：改为44
+                        embed_dim=384,
+                        depth=8,
+                        mlp_ratio=2.
+                    )
+
+                    if isinstance(loaded_obj, dict):
+                        print(f"🔑 字典键: {loaded_obj.keys()}")
+                        # 如果是字典，尝试不同的键
+                        if 'state_dict' in loaded_obj:
+                            self.model.load_state_dict(loaded_obj['state_dict'])
+                            print("✅ 从 state_dict 加载权重")
+                            self.model_loaded = True
+                        elif 'model' in loaded_obj:
+                            self.model.load_state_dict(loaded_obj['model'])
+                            print("✅ 从 model 键加载权重")
+                            self.model_loaded = True
+                        elif 'weights' in loaded_obj:
+                            self.model.load_state_dict(loaded_obj['weights'])
+                            print("✅ 从 weights 键加载权重")
+                            self.model_loaded = True
+                        else:
+                            # 尝试直接加载整个字典
+                            try:
+                                self.model.load_state_dict(loaded_obj)
+                                print("✅ 直接加载字典权重")
+                                self.model_loaded = True
+                            except Exception as e:
+                                print(f"❌ 直接加载字典失败: {e}")
                     else:
-                        new_k = k
-                    new_state_dict[new_k] = v
-
-                # 加载修复后的state_dict
-                model.load_state_dict(new_state_dict, strict=False)
-                print("✅ 模型权重加载成功（使用strict=False）")
+                        print("❌ 无法识别的权重格式，创建新模型")
+                        # 创建新的模型
+                        self.model = BryoFormer(
+                            img_size=224,
+                            patch_size=16,
+                            in_chans=3,
+                            num_classes=44,
+                            embed_dim=384,
+                            depth=8,
+                            mlp_ratio=2.
+                        )
 
             except Exception as e:
-                print(f"❌ 模型权重加载失败: {e}")
-                print("🔄 尝试strict=False加载...")
-                try:
-                    model.load_state_dict(new_state_dict, strict=False)
-                    print("✅ 模型权重加载成功（使用strict=False）")
-                except Exception as e2:
-                    print(f"❌ strict=False也失败: {e2}")
-                    print("⚠️  使用随机初始化权重")
+                print(f"❌ 权重加载失败: {e}")
+                import traceback
+                traceback.print_exc()
+                # 创建新的模型作为备选
+                self.model = BryoFormer(
+                    img_size=224,
+                    patch_size=16,
+                    in_chans=3,
+                    num_classes=44,
+                    embed_dim=384,
+                    depth=8,
+                    mlp_ratio=2.
+                )
+
+        # 如果模型还是None，创建新模型
+        if self.model is None:
+            print("⚠️ 创建新的 BryoFormer 模型")
+            self.model = BryoFormer(
+                img_size=224,
+                patch_size=16,
+                in_chans=3,
+                num_classes=44,
+                embed_dim=384,
+                depth=8,
+                mlp_ratio=2.
+            )
+
+        self.model = self.model.to(self.device)
+        self.model.eval()
+        print(f"🎯 模型状态: {'预训练权重' if self.model_loaded else '随机初始化'}")
+        if hasattr(self.model, 'num_classes'):
+            print(f"🔢 模型输出维度: {self.model.num_classes}")
         else:
-            print("⚠️  未找到预训练权重，使用随机初始化模型")
+            print("⚠️ 模型没有 num_classes 属性")
 
-        # 统计模型参数
-        total_params = sum(p.numel() for p in model.parameters())
-        print(f"📈 模型参数总数: {total_params:,}")
-
-        model = model.to(self.device)
-        model.eval()
-        return model
-
-    def load_class_names(self):
-        """加载植物类别名称映射"""
-        class_file = "../shared/plant_classes.json"
-        if os.path.exists(class_file):
-            try:
-                with open(class_file, 'r', encoding='utf-8') as f:
-                    class_data = json.load(f)
-                    print(f"✅ 加载植物类别: {len(class_data)} 种")
-                    return class_data
-            except Exception as e:
-                print(f"❌ 类别文件加载失败: {e}")
-
-        # 默认类别映射
-        print("⚠️  使用默认植物类别映射")
-        return {
-            "0": {"name": "龟背竹", "sci_name": "Monstera deliciosa", "family": "天南星科"},
-            "1": {"name": "栀子花", "sci_name": "Gardenia jasminoides", "family": "茜草科"},
-            "2": {"name": "多肉植物", "sci_name": "Succulent plants", "family": "多个科属"},
-            "3": {"name": "玫瑰", "sci_name": "Rosa rugosa", "family": "蔷薇科"},
-            "4": {"name": "向日葵", "sci_name": "Helianthus annuus", "family": "菊科"}
-        }
-
-    def get_transform(self):
-        """图像预处理转换"""
-        return transforms.Compose([
+        # 图像预处理
+        self.transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(
@@ -120,41 +147,63 @@ class PlantRecognitionModel:
         ])
 
     async def predict(self, image_path, top_k=3):
-        """预测植物类别"""
+        """真正的苔藓分类预测"""
         try:
-            # 加载和预处理图像
+            print(f"🔍 开始预测，模型加载状态: {self.model_loaded}")
+            if hasattr(self.model, 'num_classes'):
+                print(f"📊 模型类别数: {self.model.num_classes}")
+
+            # 打开图片
             image = Image.open(image_path).convert('RGB')
             input_tensor = self.transform(image).unsqueeze(0).to(self.device)
 
-            # 预测
+            print(f"📊 输入张量形状: {input_tensor.shape}")
+
+            # 模型推理
             with torch.no_grad():
                 outputs = self.model(input_tensor)
-                probabilities = torch.nn.functional.softmax(outputs[0], dim=0)
+                print(f"📊 模型输出形状: {outputs.shape}")
+                print(f"📊 输出值范围: {outputs.min().item():.4f} ~ {outputs.max().item():.4f}")
+
+                # 获取概率
+                probabilities = F.softmax(outputs, dim=1)
                 top_probs, top_indices = torch.topk(probabilities, top_k)
 
-            # 构建结果
-            results = []
-            for i in range(top_k):
-                class_idx = top_indices[i].item()
-                confidence = top_probs[i].item()
+                print(f"🎯 前{top_k}个预测:")
+                results = []
+                for i in range(top_k):
+                    class_idx = top_indices[0][i].item()
+                    confidence = top_probs[0][i].item()
 
-                class_key = str(class_idx)
-                if class_key in self.class_names:
-                    plant_info = self.class_names[class_key].copy()
-                    plant_info["confidence"] = confidence
-                    plant_info["class_id"] = class_idx
-                    results.append(plant_info)
+                    # 确保索引在范围内
+                    if class_idx < len(self.class_names):
+                        class_name = self.class_names[class_idx]
+                    else:
+                        class_name = f"未知类别_{class_idx}"
+
+                    result = {
+                        "name": class_name,
+                        "sci_name": class_name,
+                        "family": "苔藓植物",
+                        "confidence": round(confidence, 4),
+                        "class_id": class_idx
+                    }
+                    results.append(result)
+                    print(f"  {i + 1}. {class_name}: {confidence:.4f}")
 
             return {
                 "success": True,
-                "predictions": results,
-                "top_prediction": results[0] if results else None
+                "identification": {
+                    "predictions": results,
+                    "top_prediction": results[0] if results else None
+                },
+                "message": f"识别成功: {results[0]['name']}" if results else "识别失败",
+                "model_type": "BryoFormer苔藓分类",
+                "model_loaded": self.model_loaded
             }
 
         except Exception as e:
             print(f"❌ 预测失败: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "predictions": []
-            }
+            import traceback
+            traceback.print_exc()
+            return {"success": False, "message": f"识别失败: {str(e)}"}

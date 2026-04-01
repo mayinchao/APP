@@ -1,0 +1,47 @@
+name: Build APK
+on:
+  # 代码推送到main/master分支时自动触发打包，根据你的仓库默认分支修改
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Flet官方推荐3.10-3.12稳定版
+          cache: 'pip'
+
+      - name: 设置Java环境（Android编译必需）
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: 升级pip并安装项目全量依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+      - name: 构建Android Release版APK
+        run: |
+          flet build apk \
+            --build-number ${{ github.run_number }} \
+            --build-version "1.0.${{ github.run_number }}" \
+            --manifest-permissions ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,CALL_PHONE,SEND_SMS,INTERNET \
+            --release
+
+      - name: 上传APK构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: 滇菌智护-APP安装包
+          path: build/apk/*.apk
+          retention-days: 30 # 安装包保留30天
