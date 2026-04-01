@@ -4,7 +4,7 @@ flet>=0.24.0
 flet_video>=0.24.0
 flet_geolocator>=0.24.0
 # 网络请求
-aiohttp>=3.10.0
+aiohttp>=3.9.5
 requests>=2.30.0
 # 图片处理
 pillow>=10.0.0
