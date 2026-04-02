@@ -8,44 +8,31 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
+      - run: |
+          cp Frontend/requirements.txt .
+          pip install -r requirements.txt
       - run: cp Frontend/app.py .
       - run: cp Frontend/navigation_bars.py .
-      - run: sed -i 's/alignment\.center/ft.alignment.CENTER/g' app.py
-      - run: sed -i 's/alignment\.center/ft.alignment.CENTER/g' navigation_bars.py
+      - run: |
+          # 修复 alignment
+          sed -i 's/alignment\.center/ft.alignment.CENTER/g' app.py
+          # 注释掉 Geolocator 相关代码
+          sed -i 's/from flet import (.*Geolocator.*)/# Geolocator removed/g' app.py
+          sed -i 's/from flet import Geolocator/# Geolocator removed/g' app.py
+          sed -i 's/self\.geolocator = Geolocator()/self.geolocator = None/g' app.py
+          sed -i 's/from flet_geolocator/# Geolocator disabled/g' app.py
       - run: |
           echo 'import flet as ft' > main.py
-          echo 'import traceback' >> main.py
-          echo '' >> main.py
-          echo 'try:' >> main.py
-          echo '    from app import PlantApp' >> main.py
-          echo '    import navigation_bars' >> main.py
-          echo 'except Exception as e:' >> main.py
-          echo '    def error_page(page: ft.Page):' >> main.py
-          echo '        page.add(ft.Text("Import Error: " + str(e), color=ft.Colors.RED))' >> main.py
-          echo '    ft.app(target=error_page)' >> main.py
-          echo '    import sys' >> main.py
-          echo '    sys.exit(0)' >> main.py
+          echo 'from app import PlantApp' >> main.py
           echo '' >> main.py
           echo 'def main(page: ft.Page):' >> main.py
-          echo '    try:' >> main.py
-          echo '        page.title = "Test"' >> main.py
-          echo '        page.add(ft.Text("Step 1: Starting..."))' >> main.py
-          echo '        page.update()' >> main.py
-          echo '        page.add(ft.Text("Step 2: Creating..."))' >> main.py
-          echo '        page.update()' >> main.py
-          echo '        app = PlantApp(page)' >> main.py
-          echo '        page.add(ft.Text("Step 3: Done!"))' >> main.py
-          echo '        page.update()' >> main.py
-          echo '    except Exception as e:' >> main.py
-          echo '        page.clean()' >> main.py
-          echo '        page.add(ft.Text("ERROR: " + str(e), color=ft.Colors.RED))' >> main.py
-          echo '        page.add(ft.Text(traceback.format_exc()[-300:], size=10))' >> main.py
-          echo '        page.update()' >> main.py
+          echo '    page.title = "滇菌智护"' >> main.py
+          echo '    page.bgcolor = ft.Colors.LIGHT_GREEN_50' >> main.py
+          echo '    app = PlantApp(page)' >> main.py
           echo '' >> main.py
           echo 'ft.app(target=main)' >> main.py
       - run: echo "y" | flet build apk
       - uses: actions/upload-artifact@v4
         with:
-          name: debug-app
+          name: plant-app
           path: build/apk/*.apk
