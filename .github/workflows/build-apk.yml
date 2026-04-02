@@ -13,14 +13,9 @@ jobs:
           pip install -r requirements.txt
       - run: cp Frontend/app.py .
       - run: cp Frontend/navigation_bars.py .
-      - run: |
-          # 修复 alignment
-          sed -i 's/alignment\.center/ft.alignment.CENTER/g' app.py
-          # 注释掉 Geolocator 相关代码
-          sed -i 's/from flet import (.*Geolocator.*)/# Geolocator removed/g' app.py
-          sed -i 's/from flet import Geolocator/# Geolocator removed/g' app.py
-          sed -i 's/self\.geolocator = Geolocator()/self.geolocator = None/g' app.py
-          sed -i 's/from flet_geolocator/# Geolocator disabled/g' app.py
+      - run: sed -i 's/alignment\.center/ft.alignment.CENTER/g' app.py
+      - run: sed -i 's/Geolocator/None/g' app.py
+      - run: sed -i 's/from flet import (.*)/from flet import Page, Container, Row, Column, IconButton, Text, PopupMenuButton, PopupMenuItem, Icon, Stack, alignment, border_radius, Colors, ScrollMode, Card, Image, ElevatedButton, TextField, Switch, SnackBar, Divider, ListView, AlertDialog, TextButton, ListTile/g' app.py
       - run: |
           echo 'import flet as ft' > main.py
           echo 'from app import PlantApp' >> main.py
