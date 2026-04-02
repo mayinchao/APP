@@ -4,7 +4,6 @@ from flet import (
     Page, Container, Row, Column, IconButton, Text, PopupMenuButton,
     PopupMenuItem, Icon, Stack, alignment, border_radius, Colors, ScrollMode,
     Card, Image, ElevatedButton, TextField, Switch, SnackBar, Divider, ListView,
-    Geolocator, GeolocatorPosition, Video,
     AlertDialog, TextButton, ListTile
 )
 import datetime
